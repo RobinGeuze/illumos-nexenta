@@ -1912,6 +1912,8 @@ YGE_OBJS = yge.o
 
 SKD_OBJS = skd.o
 
+NVME_OBJS = nvme.o
+
 #
 #	Build up defines and paths.
 #
