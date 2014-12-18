@@ -87,6 +87,7 @@
 	    (((cdb[4]) & 0xF0) == 0) && (((cdb[4]) & 0x01) == 0))))
 /* End of SCSI2_CONFLICT_FREE_CMDS */
 
+int HardwareAcceleratedInit = 0;
 
 /*
  * An /etc/system tunable which specifies the maximum number of LBAs supported
@@ -2403,18 +2404,27 @@ sbd_handle_write_same_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	uint32_t buflen, iolen;
 	int ndx, ret;
 
+	if (ATOMIC8_GET(scmd->nbufs) > 0) {
+		atomic_add_8(&scmd->nbufs, -1);
+	}
+
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
+		sbd_scmd_ats_handling_after_io(sl, scmd);
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 		    dbuf->db_xfer_status, NULL);
 		return;
 	}
 
-	if (ATOMIC8_GET(scmd->nbufs) > 0) {
-		atomic_add_8(&scmd->nbufs, -1);
-	}
-
 	if (scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
 		goto write_same_xfer_done;
+	}
+
+	/* if this is a unnessary callback just return */
+	if (((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
+		((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0) ||
+		(scmd->trans_data == NULL)) {
+		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
+		return;
 	}
 
 	if (ATOMIC32_GET(scmd->len) != 0) {
@@ -2426,13 +2436,6 @@ sbd_handle_write_same_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	}
 
 	laddr = dbuf->db_relative_offset;
-
-	/*
-	 * if the buffer has been released then this call is an unexpected
-	 * and invalid duplicate.  Panic rather than corrupt memory.
-	 */
-	if (scmd->trans_data == NULL)
-		cmn_err(CE_PANIC, "write_same write after buffer free");
 
 	for (buflen = 0, ndx = 0; (buflen < dbuf->db_data_size) &&
 	    (ndx < dbuf->db_sglist_length); ndx++) {
@@ -2546,6 +2549,12 @@ sbd_handle_write_same(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	uint8_t do_immediate_data = 0;
 	int ret;
 
+	if (HardwareAcceleratedInit == 0) {
+		stmf_scsilib_send_status(task, STATUS_CHECK,
+		    STMF_SAA_INVALID_OPCODE);
+		return;
+	}
+
 	task->task_cmd_xfer_length = 0;
 	if (task->task_additional_flags &
 	    TASK_AF_NO_EXPECTED_XFER_LENGTH) {
@@ -2562,11 +2571,13 @@ sbd_handle_write_same(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 		return;
 	}
 	unmap = task->task_cdb[1] & 0x08;
+
 	if (unmap && ((sl->sl_flags & SL_UNMAP_ENABLED) == 0)) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_FIELD_IN_CDB);
 		return;
 	}
+
 	if (task->task_cdb[0] == SCMD_WRITE_SAME_G1) {
 		addr = READ_SCSI32(&task->task_cdb[2], uint64_t);
 		len = READ_SCSI16(&task->task_cdb[7], uint64_t);

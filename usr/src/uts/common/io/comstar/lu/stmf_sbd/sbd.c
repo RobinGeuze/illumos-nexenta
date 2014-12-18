@@ -56,6 +56,9 @@
 extern sbd_status_t sbd_pgr_meta_init(sbd_lu_t *sl);
 extern sbd_status_t sbd_pgr_meta_load(sbd_lu_t *sl);
 extern void sbd_pgr_reset(sbd_lu_t *sl);
+extern int HardwareAcceleratedLocking;
+extern int HardwareAcceleratedInit;
+extern int HardwareAcceleratedMove;
 
 static int sbd_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg,
     void **result);
@@ -194,6 +197,14 @@ _init(void)
 	}
 	mutex_init(&sbd_lock, NULL, MUTEX_DRIVER, NULL);
 	rw_init(&sbd_global_prop_lock, NULL, RW_DRIVER, NULL);
+
+	if (HardwareAcceleratedLocking == 0)
+		cmn_err(CE_NOTE, "HardwareAcceleratedLocking Disabled");
+	if (HardwareAcceleratedMove == 0)
+		cmn_err(CE_NOTE, "HardwareAcceleratedMove  Disabled");
+	if (HardwareAcceleratedInit == 0)
+		cmn_err(CE_NOTE, "HardwareAcceleratedInit  Disabled");
+
 	return (0);
 }
 

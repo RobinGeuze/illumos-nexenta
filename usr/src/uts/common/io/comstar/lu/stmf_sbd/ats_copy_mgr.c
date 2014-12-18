@@ -44,9 +44,14 @@
 /* ATS routines. */
 #define	SBD_ATS_MAX_NBLKS	32
 
+int HardwareAcceleratedLocking = 0;
+int HardwareAcceleratedMove = 0;
+
 uint8_t
 sbd_ats_max_nblks(void)
 {
+	if (HardwareAcceleratedLocking == 0)
+		return (0);
 	return (SBD_ATS_MAX_NBLKS);
 }
 
@@ -65,6 +70,9 @@ sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 	sbd_status_t ret = SBD_SUCCESS;
 	ats_state_t *ats_state, *ats_state_ret;
 	uint64_t lbaend;
+
+	if (HardwareAcceleratedLocking == 0)
+		return (ret);
 
 	mutex_enter(&sl->sl_lock);
 	/*
@@ -150,6 +158,8 @@ sbd_ats_handling_after_io(sbd_lu_t *sl, ats_state_t *ats_state)
 	 * This is probably the most common way that an item is
 	 * discarded.
 	 */
+	if (HardwareAcceleratedLocking == 0)
+		return;
 	ASSERT(ats_state != NULL);
 	ASSERT(sl != NULL);
 	mutex_enter(&sl->sl_lock);
@@ -172,6 +182,8 @@ sbd_ats_remove_by_task(scsi_task_t *task, sbd_lu_t *sl)
 {
 	ats_state_t *ats_state;
 
+	if (HardwareAcceleratedLocking == 0)
+		return;
 	/*
 	 * When an abort or some other condition occurs that may need to
 	 * remove an element from the list this is the command that is
@@ -284,25 +296,33 @@ void
 sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
     struct stmf_data_buf *dbuf, uint8_t dbuf_reusable)
 {
-	// sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
+	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	uint64_t laddr;
 	uint32_t buflen, iolen, miscompare_off;
 	int ndx;
 	sbd_status_t ret;
 
+	if (ATOMIC8_GET(scmd->nbufs) > 0) {
+		atomic_add_8(&scmd->nbufs, -1);
+	}
+
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
-		sbd_free_ats_handle(task, scmd);
+		sbd_scmd_ats_handling_after_io(sl, scmd);
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 		    dbuf->db_xfer_status, NULL);
 		return;
 	}
 
-	if (ATOMIC8_GET(scmd->nbufs) > 0) {
-		atomic_add_8(&scmd->nbufs, -1);
-	}
-
 	if (scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
 		goto ATS_XFER_DONE;
+	}
+
+	/* if state is confused drop the command */
+	if ((scmd->trans_data == NULL) ||
+		((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
+		((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0)) {
+		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
+		return;
 	}
 
 	if (ATOMIC32_GET(scmd->len) != 0) {
@@ -319,8 +339,6 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	 * move the most recent data transfer to the temporary buffer
 	 * used for the compare and write function.
 	 */
-	if (scmd->trans_data == NULL)
-		cmn_err(CE_PANIC, "compare and write null buffer");
 	laddr = dbuf->db_relative_offset;
 	for (buflen = 0, ndx = 0; (buflen < dbuf->db_data_size) &&
 	    (ndx < dbuf->db_sglist_length); ndx++) {
@@ -445,6 +463,12 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	ats_state_t *ats_handle;
 	uint8_t do_immediate_data = 0;
 	/* int ret; */
+
+	if (HardwareAcceleratedLocking == 0) {
+		stmf_scsilib_send_status(task, STATUS_CHECK,
+		    STMF_SAA_INVALID_OPCODE);
+		return;
+	}
 
 	task->task_cmd_xfer_length = 0;
 	if (task->task_additional_flags &
@@ -834,6 +858,12 @@ void
 sbd_handle_xcopy(scsi_task_t *task, stmf_data_buf_t *dbuf)
 {
 	uint32_t cmd_xfer_len;
+
+	if (HardwareAcceleratedMove == 0) {
+		stmf_scsilib_send_status(task, STATUS_CHECK,
+		    STMF_SAA_INVALID_OPCODE);
+		return;
+	}
 
 	cmd_xfer_len = READ_SCSI32(&task->task_cdb[10], uint32_t);
 
