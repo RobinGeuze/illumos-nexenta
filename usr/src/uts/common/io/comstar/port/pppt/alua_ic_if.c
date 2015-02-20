@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -665,7 +666,10 @@ stmf_ic_scsi_cmd_msg_alloc(
 
 	icsc->icsc_task_expected_xfer_length = task->task_expected_xfer_length;
 	if (task->task_cdb_length) {
-		ASSERT(task->task_mgmt_function == TM_NONE);
+		if (task->task_mgmt_function == TM_NONE) {
+			cmn_err(CE_NOTE, "%s: task management function is "
+			    "TM_NONE", __func__);
+		}
 		icsc->icsc_task_cdb_length = task->task_cdb_length;
 		icsc->icsc_task_cdb =
 		    (uint8_t *)kmem_zalloc(task->task_cdb_length, KM_SLEEP);

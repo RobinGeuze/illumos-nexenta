@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013, Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015, Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -45,7 +45,11 @@
 #include "pppt.h"
 
 #define	PPPT_VERSION		BUILD_DATE "-1.18dev"
+#ifdef DEBUG
+#define	PPPT_NAME_VERSION	"COMSTAR PPPT v DEBUG" PPPT_VERSION
+#else
 #define	PPPT_NAME_VERSION	"COMSTAR PPPT v" PPPT_VERSION
+#endif	/* DEBUG */
 
 /*
  * DDI entry points.
