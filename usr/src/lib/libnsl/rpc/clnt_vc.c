@@ -526,7 +526,7 @@ set_up_connection(int fd, struct netbuf *svcaddr, struct ct_data *ct,
 			}
 		}
 
-		for (nconnect = 0; nconnect < 3; nconnect++) {
+		for (nconnect = 0; nconnect < 1; nconnect++) {
 			if (t_connect(fd, &sndcallstr, rcvcall) != -1) {
 				connected = TRUE;
 				break;
