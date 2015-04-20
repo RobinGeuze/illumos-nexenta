@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -43,9 +43,9 @@
 
 /* ATS routines. */
 #define	SBD_ATS_MAX_NBLKS	32
-
-int HardwareAcceleratedLocking = 0;
-int HardwareAcceleratedMove = 0;
+int HardwareAcceleratedLocking = 1;
+int HardwareAcceleratedMove = 1;
+uint64_t sbd_list_length = 0;
 
 uint8_t
 sbd_ats_max_nblks(void)
@@ -59,19 +59,20 @@ sbd_ats_max_nblks(void)
 	((start2) > (start1) ? ((start2) - (start1)) < (len1) : \
 	((start1) - (start2)) < (len2))
 
+/*ARGSUSED*/
 static sbd_status_t
-sbd_alloc_ats_handle(scsi_task_t *task, uint64_t lba, uint64_t count,
-	ats_state_t **ats_state_ret);
-
-sbd_status_t
-sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
-	uint64_t lba, uint64_t count, ats_state_t **ats_handle)
+sbd_ats_do_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
+	uint64_t lba, uint64_t count, uint32_t flags)
 {
 	sbd_status_t ret = SBD_SUCCESS;
 	ats_state_t *ats_state, *ats_state_ret;
-	uint64_t lbaend;
+	sbd_cmd_t *scmd = (sbd_cmd_t *)task->task_lu_private;
+	uint8_t cdb0 = task->task_cdb[0];
 
 	if (HardwareAcceleratedLocking == 0)
+		return (SBD_SUCCESS);
+
+	if (scmd == NULL)
 		return (ret);
 
 	mutex_enter(&sl->sl_lock);
@@ -81,11 +82,7 @@ sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 	 * read, write or compare and write.
 	 */
 	if (list_is_empty(&sl->sl_ats_io_list)) {
-		ret = sbd_alloc_ats_handle(task, lba, count, &ats_state_ret);
-		list_insert_head(&sl->sl_ats_io_list, ats_state_ret);
-		*ats_handle = ats_state_ret;
-		mutex_exit(&sl->sl_lock);
-		return (ret);
+		goto done;
 	}
 
 	/*
@@ -94,146 +91,106 @@ sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 	 *
 	 * Duplicate reads and writes are allowed and kept on the list
 	 * since there is no reason that overlapping IO operations should
-	 * be blocked.
+	 * be delayed.
 	 *
-	 * A command the conflicts with a running compare and write will
+	 * A command that conflicts with a running compare and write will
 	 * be rescheduled and rerun.  This is handled by stmf_task_poll_lu.
 	 * There is a possibility that a command can be starved and still
 	 * return busy, which is valid in the SCSI protocol.
 	 */
 
-	lbaend = lba + count - 1;
 	for (ats_state = list_head(&sl->sl_ats_io_list); ats_state != NULL;
-			ats_state = list_next(&sl->sl_ats_io_list, ats_state)) {
+	    ats_state = list_next(&sl->sl_ats_io_list, ats_state)) {
+
+		if (is_overlapping(ats_state->as_cur_ats_lba,
+		    ats_state->as_cur_ats_len, lba, count) == 0)
+			continue;
+
+		/* if the task is already listed just return */
+		if (task == ats_state->as_cur_ats_task) {
+			cmn_err(CE_WARN, "sbd_ats_handling_before_io: "
+			    "task %p already on list", (void *) task);
+			ret = SBD_SUCCESS;
+			goto exit;
+		}
 		/*
 		 * the current command is a compare and write, if there is any
 		 * overlap return error
 		 */
-		if (task->task_cdb[0] == SCMD_COMPARE_AND_WRITE) {
-			if (lba >= ats_state->as_cur_ats_lba &&
-				lba <= ats_state->as_cur_ats_lba_end) {
-				ret = SBD_BUSY;
-				goto exit;
-			}
-			if (lbaend >= ats_state->as_cur_ats_lba &&
-				lbaend <= ats_state->as_cur_ats_lba_end) {
-				ret =  SBD_BUSY;
-				goto exit;
-			}
-			continue;
-		}
 
-		/*
-		 * The current command is a read or write or variant.
-		 * Only return an error if the current command conflicts
-		 * with a compare and write that is in progress
-		 */
-		if (ats_state->as_scmd != SCMD_COMPARE_AND_WRITE)
-			continue;
-		if (lba >= ats_state->as_cur_ats_lba &&
-			lba <= ats_state->as_cur_ats_lba_end) {
-			ret = SBD_BUSY;
-			goto exit;
-		}
-		if (lbaend >= ats_state->as_cur_ats_lba &&
-			lbaend <= ats_state->as_cur_ats_lba_end) {
+		if ((cdb0 == SCMD_COMPARE_AND_WRITE) ||
+		    (ats_state->as_cmd == SCMD_COMPARE_AND_WRITE)) {
 			ret = SBD_BUSY;
 			goto exit;
 		}
 	}
+done:
+	ats_state_ret =
+	    (ats_state_t *)kmem_zalloc(sizeof (ats_state_t), KM_SLEEP);
+	ats_state_ret->as_cur_ats_lba = lba;
+	ats_state_ret->as_cur_ats_len = count;
+	ats_state_ret->as_cmd = cdb0;
+	ats_state_ret->as_cur_ats_task = task;
+	if (list_is_empty(&sl->sl_ats_io_list)) {
+		list_insert_head(&sl->sl_ats_io_list, ats_state_ret);
+	} else {
+		list_insert_tail(&sl->sl_ats_io_list, ats_state_ret);
+	}
+	scmd->flags |= SBD_SCSI_CMD_ATS_RELATED;
+	scmd->ats_state = ats_state;
+	sbd_list_length++;
+	mutex_exit(&sl->sl_lock);
+	return (SBD_SUCCESS);
 
-	ret = sbd_alloc_ats_handle(task, lba, count, &ats_state_ret);
-	list_insert_tail(&sl->sl_ats_io_list, ats_state_ret);
-	*ats_handle = ats_state_ret;
 exit:
 	mutex_exit(&sl->sl_lock);
 	return (ret);
 }
 
-void
-sbd_ats_handling_after_io(sbd_lu_t *sl, ats_state_t *ats_state)
+sbd_status_t
+sbd_ats_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
+	uint64_t lba, uint64_t count)
 {
-	/*
-	 * Remove a item from the list by using the state structure.
-	 * This is probably the most common way that an item is
-	 * discarded.
-	 */
-	if (HardwareAcceleratedLocking == 0)
-		return;
-	ASSERT(ats_state != NULL);
-	ASSERT(sl != NULL);
-	mutex_enter(&sl->sl_lock);
-	list_remove(&sl->sl_ats_io_list, ats_state);
-	kmem_free(ats_state, sizeof (ats_state_t));
-	mutex_exit(&sl->sl_lock);
-}
-
-/*
- * just like sbd_ats_handling_after_io() but also manages a sbd_cmd
- */
-void
-sbd_scmd_ats_handling_after_io(sbd_lu_t *sl, sbd_cmd_t *scmd)
-{
-	sbd_ats_handling_after_io(sl, scmd->ats_state);
+	return (sbd_ats_do_handling_before_io(task, sl, lba, count, 0));
 }
 
 void
-sbd_ats_remove_by_task(scsi_task_t *task, sbd_lu_t *sl)
+sbd_ats_remove_by_task(scsi_task_t *task)
 {
 	ats_state_t *ats_state;
+	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
+	sbd_cmd_t *scmd = task->task_lu_private;
 
-	if (HardwareAcceleratedLocking == 0)
+	if (scmd == NULL)
 		return;
 	/*
-	 * When an abort or some other condition occurs that may need to
-	 * remove an element from the list this is the command that is
-	 * used.  There are cases where an IO is aborted that may be in
-	 * the clean up phase.  sbd_cmd_t may have been freed, or the
-	 * other elements may have been freed so the list is scanned
-	 * to find the IO task and the element is removed.
+	 * Scan the list and take the task off of the list. It is possible
+	 * that the call is made in a situation where the task is not
+	 * listed.  That is a valid but unlikely case. If it happens
+	 * just fall through and return.  The list removal is done by
+	 * task not LBA range and a task cannot be active for more than
+	 * one command so there is never an issue about removing the
+	 * wrong element.
 	 */
-
 	mutex_enter(&sl->sl_lock);
+	if (list_is_empty(&sl->sl_ats_io_list)) {
+		mutex_exit(&sl->sl_lock);
+		return;
+	}
+
 	for (ats_state = list_head(&sl->sl_ats_io_list); ats_state != NULL;
-			ats_state = list_next(&sl->sl_ats_io_list, ats_state)) {
+	    ats_state = list_next(&sl->sl_ats_io_list, ats_state)) {
+
 		if (ats_state->as_cur_ats_task == task) {
-			/*
-			 * abort can call this routine multiple
-			 * times, so search the list and then remove the
-			 * io state without dropping the lock
-			 */
 			list_remove(&sl->sl_ats_io_list, ats_state);
 			kmem_free(ats_state, sizeof (ats_state_t));
+			scmd->flags &= ~SBD_SCSI_CMD_ATS_RELATED;
+			scmd->ats_state = NULL;
+			sbd_list_length--;
 			break;
 		}
 	}
 	mutex_exit(&sl->sl_lock);
-}
-
-static sbd_status_t
-sbd_alloc_ats_handle(scsi_task_t *task, uint64_t lba, uint64_t count,
-		ats_state_t **ats_state_ret)
-{
-	ats_state_t *ats_state;
-
-	ats_state = (ats_state_t *)kmem_zalloc(sizeof (ats_state_t), KM_SLEEP);
-	ats_state->as_scmd = task->task_cdb[0];
-	ats_state->as_cur_ats_lba = lba;
-	ats_state->as_cur_ats_len = count;
-	ats_state->as_cur_ats_lba_end = lba + count - 1;
-	ats_state->as_cur_ats_task = task;
-	*ats_state_ret = ats_state;
-
-	return (SBD_SUCCESS);
-}
-
-void
-sbd_free_ats_handle(struct scsi_task *task, sbd_cmd_t *scmd)
-{
-	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
-
-	ASSERT(scmd->ats_state != NULL);
-	sbd_scmd_ats_handling_after_io(sl, scmd);
 }
 
 static sbd_status_t
@@ -292,11 +249,38 @@ sbd_send_miscompare_status(struct scsi_task *task, uint32_t miscompare_off)
 	(void) stmf_send_scsi_status(task, STMF_IOF_LU_DONE);
 }
 
+static void
+sbd_ats_release_resources(struct scsi_task *task)
+{
+	sbd_cmd_t *scmd = (sbd_cmd_t *)task->task_lu_private;
+
+	/*
+	 * a few basic check here to be sure that there are not multiple
+	 * calls going on.  If scmd is null just return.  This is very
+	 * unlikely, but could happed if the task is freed by an abort.
+	 * If nbufs is invalid warn but ignore the error.  Last if the
+	 * trans_data is either null or the lenght is zero just blow
+	 * off the operation and leak the memory buffer.
+	 */
+	if (scmd == NULL)
+		return;
+
+	if (scmd->nbufs == 0xFF)
+		cmn_err(CE_WARN, "%s invalid buffer count %x", __func__, 
+		    scmd->nbufs);
+
+	if ((scmd->trans_data != NULL) && (scmd->trans_data_len != 0))
+		kmem_free(scmd->trans_data, scmd->trans_data_len);
+
+	scmd->trans_data = NULL; /* force panic later if re-entered */
+	scmd->trans_data_len = 0;
+	scmd->flags &= ~SBD_SCSI_CMD_TRANS_DATA;
+}
+
 void
 sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
     struct stmf_data_buf *dbuf, uint8_t dbuf_reusable)
 {
-	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	uint64_t laddr;
 	uint32_t buflen, iolen, miscompare_off;
 	int ndx;
@@ -307,7 +291,8 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	}
 
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
-		sbd_scmd_ats_handling_after_io(sl, scmd);
+		sbd_ats_remove_by_task(task);
+		sbd_ats_release_resources(task);
 		stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 		    dbuf->db_xfer_status, NULL);
 		return;
@@ -319,8 +304,8 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 
 	/* if state is confused drop the command */
 	if ((scmd->trans_data == NULL) ||
-		((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
-		((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0)) {
+	    ((scmd->flags & SBD_SCSI_CMD_TRANS_DATA) == 0) ||
+	    ((scmd->flags & SBD_SCSI_CMD_ACTIVE) == 0)) {
 		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
 		return;
 	}
@@ -355,7 +340,7 @@ sbd_handle_ats_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 
 ATS_XFER_DONE:
 	if (ATOMIC32_GET(scmd->len) == 0 ||
-			scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
+	    scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
 		stmf_free_dbuf(task, dbuf);
 		/*
 		 * if this is not the last buffer to be transfered then exit
@@ -366,13 +351,14 @@ ATS_XFER_DONE:
 			return;
 		scmd->flags &= ~SBD_SCSI_CMD_ACTIVE;
 		if (scmd->flags & SBD_SCSI_CMD_XFER_FAIL) {
-			sbd_free_ats_handle(task, scmd);
+			sbd_ats_remove_by_task(task);
 			stmf_scsilib_send_status(task, STATUS_CHECK,
 			    STMF_SAA_WRITE_ERROR);
 		} else {
 			ret = sbd_compare_and_write(task, scmd,
 			    &miscompare_off);
-			sbd_free_ats_handle(task, scmd);
+			sbd_ats_remove_by_task(task);
+			sbd_ats_release_resources(task);
 			if (ret != SBD_SUCCESS) {
 				if (ret != SBD_COMPARE_FAILED) {
 					stmf_scsilib_send_status(task,
@@ -385,13 +371,6 @@ ATS_XFER_DONE:
 				stmf_scsilib_send_status(task, STATUS_GOOD, 0);
 			}
 		}
-		ASSERT(scmd->nbufs == 0 &&
-			(scmd->flags & SBD_SCSI_CMD_TRANS_DATA) &&
-			scmd->trans_data != NULL);
-		kmem_free(scmd->trans_data, scmd->trans_data_len);
-		scmd->trans_data = NULL; /* force panic later if re-entered */
-		scmd->trans_data_len = 0;
-		scmd->flags &= ~SBD_SCSI_CMD_TRANS_DATA;
 		return;
 	}
 	sbd_do_ats_xfer(task, scmd, dbuf, dbuf_reusable);
@@ -429,7 +408,8 @@ sbd_do_ats_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 		    (minsize >= 512));
 		if (dbuf == NULL) {
 			if (ATOMIC8_GET(scmd->nbufs) == 0) {
-				sbd_free_ats_handle(task, scmd);
+				sbd_ats_remove_by_task(task);
+				sbd_ats_release_resources(task);
 				stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 				    STMF_ALLOC_FAILURE, NULL);
 			}
@@ -460,7 +440,6 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	uint64_t addr, len;
 	sbd_cmd_t *scmd;
 	stmf_data_buf_t *dbuf;
-	ats_state_t *ats_handle;
 	uint8_t do_immediate_data = 0;
 	/* int ret; */
 
@@ -495,8 +474,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	/*
 	 * This can be called again. It will return the same handle again.
 	 */
-	if (sbd_ats_handling_before_io(task, sl, addr, len,
-						&ats_handle) != SBD_SUCCESS) {
+	if (sbd_ats_handling_before_io(task, sl, addr, len) != SBD_SUCCESS) {
 		if (stmf_task_poll_lu(task, 10) != STMF_SUCCESS) {
 			stmf_scsilib_send_status(task, STATUS_BUSY, 0);
 		}
@@ -512,7 +490,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 		task->task_expected_xfer_length = task->task_cmd_xfer_length;
 	}
 	if ((addr + len) > sl->sl_lu_size) {
-		sbd_ats_handling_after_io(sl, ats_handle);
+		sbd_ats_remove_by_task(task);
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_LBA_OUT_OF_RANGE);
 		return;
@@ -521,7 +499,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	len <<= 1;
 
 	if (len != task->task_expected_xfer_length) {
-		sbd_ats_handling_after_io(sl, ats_handle);
+		sbd_ats_remove_by_task(task);
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_FIELD_IN_CDB);
 		return;
@@ -532,7 +510,7 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 			if (initial_dbuf->db_data_size >
 			    task->task_expected_xfer_length) {
 				/* protocol error */
-				sbd_ats_handling_after_io(sl, ats_handle);
+				sbd_ats_remove_by_task(task);
 				stmf_abort(STMF_QUEUE_TASK_ABORT, task,
 				    STMF_INVALID_ARG, NULL);
 				return;
@@ -560,7 +538,6 @@ sbd_handle_ats(scsi_task_t *task, struct stmf_data_buf *initial_dbuf)
 	scmd->trans_data_len = (uint32_t)len;
 	scmd->trans_data = kmem_alloc((size_t)len, KM_SLEEP);
 	scmd->current_ro = 0;
-	scmd->ats_state = ats_handle;
 
 	if (do_immediate_data) {
 		/*

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -158,7 +158,11 @@ static struct dev_ops sbd_ops = {
 	NULL			/* power */
 };
 
-#define	SBD_NAME	"COMSTAR SBD+ "
+#ifdef DEBUG
+#define	SBD_NAME	"COMSTAR SBD+ " __DATE__ " " __TIME__ " DEBUG"
+#else
+#define	SBD_NAME	"COMSTAR SBD+"
+#endif
 
 static struct modldrv modldrv = {
 	&mod_driverops,
@@ -1468,6 +1472,7 @@ sbd_populate_and_register_lu(sbd_lu_t *sl, uint32_t *err_ret)
 	lu->lu_task_poll = sbd_task_poll;
 	lu->lu_dbuf_free = sbd_dbuf_free;
 	lu->lu_ctl = sbd_ctl;
+	lu->lu_task_done = sbd_ats_remove_by_task;
 	lu->lu_info = sbd_info;
 	sl->sl_state = STMF_STATE_OFFLINE;
 
@@ -1485,7 +1490,7 @@ sbd_populate_and_register_lu(sbd_lu_t *sl, uint32_t *err_ret)
 	 * ATS commands simultaneously
 	 */
 	list_create(&sl->sl_ats_io_list, sizeof (ats_state_t),
-			offsetof(ats_state_t, as_next));
+	    offsetof(ats_state_t, as_next));
 	*err_ret = 0;
 	return (0);
 }

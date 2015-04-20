@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 #ifndef	_LPIF_H
 #define	_LPIF_H
@@ -77,6 +77,7 @@ typedef struct stmf_lu {
 	uint32_t		lu_proxy_reg_arg_len;
 	void			(*lu_dbuf_free)(struct scsi_task *task,
 		struct stmf_data_buf *dbuf);
+	void			(*lu_task_done)(struct scsi_task *task);
 } stmf_lu_t;
 
 /*

@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -274,8 +274,14 @@ static struct dev_ops stmf_ops = {
 	NULL			/* power */
 };
 
-#define	STMF_NAME		"COMSTAR STMF"
+
 #define	STMF_MODULE_NAME	"stmf"
+
+#ifdef	DEBUG
+#define	STMF_NAME		"COMSTAR STMF " __DATE__ " " __TIME__ " DEBUG"
+#else
+#define	STMF_NAME		"COMSTAR STMF"
+#endif
 
 static struct modldrv modldrv = {
 	&mod_driverops,
@@ -4176,6 +4182,7 @@ stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
 	return (task);
 }
 
+/* ARGSUSED */
 static void
 stmf_task_lu_free(scsi_task_t *task, stmf_i_scsi_session_t *iss)
 {
@@ -4407,9 +4414,12 @@ stmf_task_free(scsi_task_t *task)
 	    task->task_stmf_private;
 	stmf_i_scsi_session_t *iss = (stmf_i_scsi_session_t *)
 	    task->task_session->ss_stmf_private;
+	stmf_lu_t *lu = task->task_lu;
 
 	stmf_task_audit(itask, TE_TASK_FREE, CMD_OR_IOF_NA, NULL);
 
+	if ((lu != NULL) && (lu->lu_task_done != NULL))
+		lu->lu_task_done(task);
 	stmf_free_task_bufs(itask, lport);
 	stmf_itl_task_done(itask);
 	DTRACE_PROBE2(stmf__task__end, scsi_task_t *, task,
@@ -6869,6 +6879,12 @@ stmf_dlun0_ctl(struct stmf_lu *lu, int cmd, void *arg)
 	cmn_err(CE_WARN, "stmf_dlun0_ctl called with cmd %x", cmd);
 }
 
+/* ARGSUSED */
+void
+stmf_dlun0_task_done(struct scsi_task *task)
+{
+}
+
 void
 stmf_dlun_init()
 {
@@ -6882,6 +6898,7 @@ stmf_dlun_init()
 	dlun0->lu_task_free = stmf_dlun0_task_free;
 	dlun0->lu_abort = stmf_dlun0_abort;
 	dlun0->lu_task_poll = stmf_dlun0_task_poll;
+	dlun0->lu_task_done = stmf_dlun0_task_done;
 	dlun0->lu_ctl = stmf_dlun0_ctl;
 
 	ilu = (stmf_i_lu_t *)dlun0->lu_stmf_private;
@@ -7756,7 +7773,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 			return (B_FALSE);
 		break;
 
-	case PROTOCOL_iSCSI:
+	case PROTOCOL_iSCSI: /* CSTYLED */
 		{
 		iscsi_transport_id_t	*iscsiid;
 		uint16_t		adn_len, name_len;
@@ -7801,7 +7818,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 	case PROTOCOL_SAS:
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
-	default:
+	default: /* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflttpd;
 
@@ -7830,7 +7847,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 
 	switch (tpd1->protocol_id) {
 
-	case PROTOCOL_iSCSI:
+	case PROTOCOL_iSCSI: /* CSTYLED */
 		{
 		iscsi_transport_id_t *iscsitpd1, *iscsitpd2;
 		uint16_t len;
@@ -7845,7 +7862,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		}
 		break;
 
-	case PROTOCOL_SRP:
+	case PROTOCOL_SRP: /* CSTYLED */
 		{
 		scsi_srp_transport_id_t *srptpd1, *srptpd2;
 
@@ -7857,7 +7874,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		}
 		break;
 
-	case PROTOCOL_FIBRE_CHANNEL:
+	case PROTOCOL_FIBRE_CHANNEL: /* CSTYLED */
 		{
 		scsi_fc_transport_id_t *fctpd1, *fctpd2;
 
@@ -7875,7 +7892,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 	case PROTOCOL_SAS:
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
-	default:
+	default: /* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflt1, *dflt2;
 		uint16_t len;
