@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zio.h>
@@ -158,7 +159,7 @@ zap_match(zap_name_t *zn, const char *matchname)
 
 		return (strcmp(zn->zn_key_norm, norm) == 0);
 	} else {
-		/* MT_BEST or MT_EXACT */
+		/* MT_EXACT */
 		return (strcmp(zn->zn_key_orig, matchname) == 0);
 	}
 }
@@ -293,7 +294,6 @@ mze_find(zap_name_t *zn)
 	mze_tofind.mze_hash = zn->zn_hash;
 	mze_tofind.mze_cd = 0;
 
-again:
 	mze = avl_find(avl, &mze_tofind, &idx);
 	if (mze == NULL)
 		mze = avl_nearest(avl, idx, AVL_AFTER);
@@ -302,10 +302,7 @@ again:
 		if (zap_match(zn, MZE_PHYS(zn->zn_zap, mze)->mze_name))
 			return (mze);
 	}
-	if (zn->zn_matchtype == MT_BEST) {
-		zn->zn_matchtype = MT_FIRST;
-		goto again;
-	}
+
 	return (NULL);
 }
 

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -395,7 +396,6 @@ zap_leaf_lookup(zap_leaf_t *l, zap_name_t *zn, zap_entry_handle_t *zeh)
 
 	ASSERT3U(l->l_phys->l_hdr.lh_magic, ==, ZAP_LEAF_MAGIC);
 
-again:
 	for (chunkp = LEAF_HASH_ENTPTR(l, zn->zn_hash);
 	    *chunkp != CHAIN_END; chunkp = &le->le_next) {
 		uint16_t chunk = *chunkp;
@@ -424,15 +424,6 @@ again:
 			zeh->zeh_leaf = l;
 			return (0);
 		}
-	}
-
-	/*
-	 * NB: we could of course do this in one pass, but that would be
-	 * a pain.  We'll see if MT_BEST is even used much.
-	 */
-	if (zn->zn_matchtype == MT_BEST) {
-		zn->zn_matchtype = MT_FIRST;
-		goto again;
 	}
 
 	return (SET_ERROR(ENOENT));
