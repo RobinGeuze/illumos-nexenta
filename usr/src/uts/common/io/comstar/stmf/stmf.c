@@ -4503,7 +4503,19 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		w = stmf_workers;
 		mutex_enter(&w->worker_lock);
 	}
+
+	/*
+	 * if this command is a write_same or unmap just use worker 0
+	 * to limit starvation.
+	 */
+	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
+	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
+	    task->task_cdb[0] == SCMD_UNMAP) {
+		w = &stmf_workers[0];
+	}
+
 	itask->itask_worker = w;
+
 	/*
 	 * Track max system load inside the worker as we already have the
 	 * worker lock (no point implementing another lock). The service
