@@ -4511,7 +4511,9 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
 	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
 	    task->task_cdb[0] == SCMD_UNMAP) {
+		mutex_exit(&w->worker_lock);
 		w = &stmf_workers[0];
+		mutex_enter(&w->worker_lock);
 	}
 
 	itask->itask_worker = w;
