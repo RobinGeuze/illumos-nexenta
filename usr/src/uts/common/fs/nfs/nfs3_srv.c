@@ -1563,6 +1563,11 @@ rfs3_create(CREATE3args *args, CREATE3res *resp, struct exportinfo *exi,
 		goto out1;
 	}
 
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
+		goto out1;
+	}
+
 	if (is_system_labeled()) {
 		bslabel_t *clabel = req->rq_label;
 
@@ -1919,6 +1924,11 @@ rfs3_mkdir(MKDIR3args *args, MKDIR3res *resp, struct exportinfo *exi,
 		goto out1;
 	}
 
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
+		goto out1;
+	}
+
 	if (is_system_labeled()) {
 		bslabel_t *clabel = req->rq_label;
 
@@ -2064,6 +2074,11 @@ rfs3_symlink(SYMLINK3args *args, SYMLINK3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto err1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto err1;
 	}
 
@@ -2239,6 +2254,11 @@ rfs3_mknod(MKNOD3args *args, MKNOD3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto out1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
 
@@ -2760,6 +2780,11 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 		goto err1;
 	}
 
+	if (protect_zfs_mntpt(tvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
+		goto err1;
+	}
+
 	if (is_system_labeled()) {
 		if (!blequal(&l_admin_low->tsl_label, clabel)) {
 			if (!do_rfs_label_check(clabel, tvp, EQUALITY_CHECK,
@@ -2980,6 +3005,11 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto out1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
 
