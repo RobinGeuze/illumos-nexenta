@@ -146,7 +146,7 @@ fct_port_worker(void *arg)
 		/*
 		 * We process cmd aborting in the end
 		 */
-		if (iport->iport_abort_queue) {
+		if (!list_is_empty(&iport->iport_abort_queue)) {
 			suggested_action |= fct_cmd_terminator(iport);
 		}
 
@@ -909,6 +909,8 @@ start_els_posting:;
 				return;
 			}
 			irp = (fct_i_remote_port_t *)rp->rp_fct_private;
+			list_create(&irp->irp_els_list, sizeof (fct_i_cmd_t),
+			    offsetof(fct_i_cmd_t, icmd_node));
 			rw_init(&irp->irp_lock, 0, RW_DRIVER, 0);
 			irp->irp_rp = rp;
 			irp->irp_portid = cmd->cmd_rportid;
@@ -1093,8 +1095,7 @@ fct_dequeue_els(fct_i_remote_port_t *irp)
 	fct_i_cmd_t *icmd;
 
 	rw_enter(&irp->irp_lock, RW_WRITER);
-	icmd = irp->irp_els_list;
-	irp->irp_els_list = icmd->icmd_next;
+	icmd = list_remove_head(&irp->irp_els_list);
 	atomic_and_32(&icmd->icmd_flags, ~ICMD_IN_IRP_QUEUE);
 	rw_exit(&irp->irp_lock);
 }
@@ -1251,7 +1252,7 @@ fct_walk_discovery_queue(fct_i_local_port_t *iport)
 		int do_deregister = 0;
 		int irp_deregister_timer = 0;
 
-		if (irp->irp_els_list) {
+		if (!list_is_empty(&irp->irp_els_list)) {
 			ret |= fct_process_els(iport, irp);
 		}
 
@@ -1265,12 +1266,12 @@ fct_walk_discovery_queue(fct_i_local_port_t *iport)
 		}
 		suggested_action |= ret;
 
-		if (irp->irp_els_list == NULL) {
+		if (list_is_empty(&irp->irp_els_list)) {
 			mutex_exit(&iport->iport_worker_lock);
 			rw_enter(&iport->iport_lock, RW_WRITER);
 			rw_enter(&irp->irp_lock, RW_WRITER);
 			mutex_enter(&iport->iport_worker_lock);
-			if (irp->irp_els_list == NULL) {
+			if (list_is_empty(&irp->irp_els_list)) {
 				if (!irp_deregister_timer ||
 				    (do_deregister &&
 				    !irp->irp_sa_elses_count &&
@@ -2004,8 +2005,8 @@ fct_process_rscn(fct_i_cmd_t *icmd)
 disc_action_t
 fct_process_els(fct_i_local_port_t *iport, fct_i_remote_port_t *irp)
 {
-	fct_i_cmd_t	*cmd_to_abort = NULL;
-	fct_i_cmd_t	**ppcmd, *icmd;
+	list_t		cmd_to_abort;
+	fct_i_cmd_t	*next, *icmd;
 	fct_cmd_t	*cmd;
 	fct_els_t	*els;
 	int		dq;
@@ -2026,14 +2027,16 @@ fct_process_els(fct_i_local_port_t *iport, fct_i_remote_port_t *irp)
 	 * which is probably ok.
 	 */
 	rw_enter(&irp->irp_lock, RW_WRITER);
-	ppcmd = &irp->irp_els_list;
-	while ((*ppcmd) != NULL) {
+	icmd = list_head(&irp->irp_els_list);
+	list_create(&cmd_to_abort, sizeof (fct_i_cmd_t),
+	    offsetof(fct_i_cmd_t, icmd_node));
+	while (icmd != NULL) {
 		int special_prli_cond = 0;
 		dq = 0;
 
-		els = (fct_els_t *)((*ppcmd)->icmd_cmd)->cmd_specific;
+		els = (fct_els_t *)(icmd->icmd_cmd)->cmd_specific;
 
-		if (((*ppcmd)->icmd_cmd->cmd_type == FCT_CMD_RCVD_ELS) &&
+		if ((icmd->icmd_cmd->cmd_type == FCT_CMD_RCVD_ELS) &&
 		    (els->els_req_payload[0] == ELS_OP_PRLI) &&
 		    (irp->irp_flags & IRP_SOL_PLOGI_IN_PROGRESS)) {
 			/*
@@ -2045,7 +2048,7 @@ fct_process_els(fct_i_local_port_t *iport, fct_i_remote_port_t *irp)
 			special_prli_cond = 1;
 		}
 
-		if ((*ppcmd)->icmd_flags & ICMD_BEING_ABORTED) {
+		if (icmd->icmd_flags & ICMD_BEING_ABORTED) {
 			dq = 1;
 		} else if (irp->irp_sa_elses_count > 1) {
 			dq = 1;
@@ -2054,7 +2057,7 @@ fct_process_els(fct_i_local_port_t *iport, fct_i_remote_port_t *irp)
 			stmf_trace(iport->iport_alias, "Killing ELS %x cond 1",
 			    els->els_req_payload[0]);
 		} else if (irp->irp_sa_elses_count &&
-		    (((*ppcmd)->icmd_flags & ICMD_SESSION_AFFECTING) == 0)) {
+		    ((icmd->icmd_flags & ICMD_SESSION_AFFECTING) == 0)) {
 			stmf_trace(iport->iport_alias, "Killing ELS %x cond 2",
 			    els->els_req_payload[0]);
 			dq = 1;
@@ -2067,35 +2070,30 @@ fct_process_els(fct_i_local_port_t *iport, fct_i_remote_port_t *irp)
 			dq = 1;
 		}
 
+		next = list_next(&irp->irp_els_list, icmd);
 		if (dq) {
-			fct_i_cmd_t *c = (*ppcmd)->icmd_next;
-
-			if ((*ppcmd)->icmd_flags & ICMD_SESSION_AFFECTING)
-				atomic_add_16(&irp->irp_sa_elses_count, -1);
+			list_remove(&irp->irp_els_list, icmd);
+			if (icmd->icmd_flags & ICMD_SESSION_AFFECTING)
+				atomic_dec_16(&irp->irp_sa_elses_count);
 			else
-				atomic_add_16(&irp->irp_nsa_elses_count, -1);
-			(*ppcmd)->icmd_next = cmd_to_abort;
-			cmd_to_abort = *ppcmd;
-			*ppcmd = c;
-		} else {
-			ppcmd = &((*ppcmd)->icmd_next);
+				atomic_dec_16(&irp->irp_nsa_elses_count);
+			list_insert_head(&cmd_to_abort, icmd);
 		}
+		icmd = next;
 	}
 	rw_exit(&irp->irp_lock);
 
-	while (cmd_to_abort) {
-		fct_i_cmd_t *c = cmd_to_abort->icmd_next;
+	while (!list_is_empty(&cmd_to_abort)) {
+		fct_i_cmd_t *c = list_remove_head(&cmd_to_abort);
 
-		atomic_and_32(&cmd_to_abort->icmd_flags, ~ICMD_IN_IRP_QUEUE);
-		fct_queue_cmd_for_termination(cmd_to_abort->icmd_cmd,
-		    FCT_ABORTED);
-		cmd_to_abort = c;
+		atomic_and_32(&c->icmd_flags, ~ICMD_IN_IRP_QUEUE);
+		fct_queue_cmd_for_termination(c->icmd_cmd, FCT_ABORTED);
 	}
 
 	/*
 	 * pick from the top of the queue
 	 */
-	icmd = irp->irp_els_list;
+	icmd = list_head(&irp->irp_els_list);
 	if (icmd == NULL) {
 		/*
 		 * The cleanup took care of everything.
@@ -2220,12 +2218,11 @@ fct_check_cmdlist(fct_i_local_port_t *iport)
 	mutex_exit(&iport->iport_worker_lock);
 	for (ndx = 0; ndx < num_to_release; ndx++) {
 		mutex_enter(&iport->iport_cached_cmd_lock);
-		icmd = iport->iport_cached_cmdlist;
-		if (icmd == NULL) {
+		if (list_is_empty(&iport->iport_cached_cmdlist)) {
 			mutex_exit(&iport->iport_cached_cmd_lock);
 			break;
 		}
-		iport->iport_cached_cmdlist = icmd->icmd_next;
+		icmd = list_remove_head(&iport->iport_cached_cmdlist);
 		iport->iport_cached_ncmds--;
 		mutex_exit(&iport->iport_cached_cmd_lock);
 		atomic_add_32(&iport->iport_total_alloced_ncmds, -1);
