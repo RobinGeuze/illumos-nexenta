@@ -88,6 +88,7 @@
 /* End of SCSI2_CONFLICT_FREE_CMDS */
 
 int HardwareAcceleratedInit = 1;
+uint8_t sbd_unmap_enable = 1;		/* allow unmap by default */
 
 /*
  * An /etc/system tunable which specifies the maximum number of LBAs supported
@@ -2696,6 +2697,12 @@ sbd_handle_unmap(scsi_task_t *task, stmf_data_buf_t *dbuf)
 {
 	sbd_lu_t *sl = (sbd_lu_t *)task->task_lu->lu_provider_private;
 	uint32_t cmd_xfer_len;
+
+	if (sbd_unmap_enable == 0) {
+		stmf_scsilib_send_status(task, STATUS_CHECK,
+		    STMF_SAA_INVALID_OPCODE);
+		return;
+	}
 
 	if (sl->sl_flags & SL_WRITE_PROTECTED) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,

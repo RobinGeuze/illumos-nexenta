@@ -59,6 +59,7 @@ extern void sbd_pgr_reset(sbd_lu_t *sl);
 extern int HardwareAcceleratedLocking;
 extern int HardwareAcceleratedInit;
 extern int HardwareAcceleratedMove;
+extern uint8_t sbd_unmap_enable;
 
 static int sbd_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg,
     void **result);
@@ -1424,7 +1425,10 @@ sbd_write_lu_info(sbd_lu_t *sl)
 static void
 do_unmap_setup(sbd_lu_t *sl)
 {
-	ASSERT((sl->sl_flags & SL_UNMAP_ENABLED) == 0);
+	if (sbd_unmap_enable == 0) {
+		sl->sl_flags &= ~(SL_UNMAP_ENABLED);
+		return;
+	}
 
 	if ((sl->sl_flags & SL_ZFS_META) == 0)
 		return;	/* No UNMAP for you. */
