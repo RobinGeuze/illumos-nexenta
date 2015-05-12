@@ -113,6 +113,7 @@ static sbd_lu_t		*sbd_lu_list = NULL;
 static kmutex_t		sbd_lock;
 static dev_info_t	*sbd_dip;
 static uint32_t		sbd_lu_count = 0;
+uint8_t sbd_enable_unmap_sync = 0;
 
 /* Global property settings for the logical unit */
 char sbd_vendor_id[]	= "NEXENTA ";
@@ -3753,6 +3754,14 @@ sbd_unmap(sbd_lu_t *sl, uint64_t offset, uint64_t length)
 
 	df.df_flags = (sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) ?
 	    DF_WAIT_SYNC : 0;
+	/*
+	 * If the global has been set to force zfs to not do a SYNC_WAIT
+	 * then just reset the flags back to zero. When DF_SYNC_WAIT
+	 * is not set the result of the unmap is written to the log, but
+	 * disk updates are asynchronous.
+	 */
+	if (sbd_enable_unmap_sync == 0)
+		df.df_flags = 0;
 	df.df_start = offset;
 	df.df_length = length;
 
