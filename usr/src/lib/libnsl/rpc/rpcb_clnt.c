@@ -21,6 +21,10 @@
  */
 
 /*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ */
+
+/*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -32,8 +36,6 @@
  * 4.3 BSD under license from the Regents of the University of
  * California.
  */
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 /*
  * interface to rpcbind rpc service.
@@ -55,7 +57,6 @@
 #ifdef ND_DEBUG
 #include <stdio.h>
 #endif
-#include <sys/utsname.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -169,10 +170,10 @@ check_cache(char *host, char *netid)
 	for (cptr = front; cptr != NULL; cptr = cptr->ac_next) {
 		if ((strcmp(cptr->ac_host, host) == 0) &&
 		    (strcmp(cptr->ac_netid, netid) == 0) &&
-			(time(NULL) <= cptr->ac_maxtime)) {
+		    (time(NULL) <= cptr->ac_maxtime)) {
 #ifdef ND_DEBUG
 			fprintf(stderr, "Found cache entry for %s: %s\n",
-				host, netid);
+			    host, netid);
 #endif
 			return (cptr);
 		}
@@ -222,7 +223,7 @@ add_cache(char *host, char *netid, struct netbuf *taddr, char *uaddr)
 	ad_cache->ac_uaddr = uaddr ? strdup(uaddr) : NULL;
 	ad_cache->ac_taddr = malloc(sizeof (struct netbuf));
 	if (!ad_cache->ac_host || !ad_cache->ac_netid || !ad_cache->ac_taddr ||
-		(uaddr && !ad_cache->ac_uaddr)) {
+	    (uaddr && !ad_cache->ac_uaddr)) {
 		goto memerr1;
 	}
 
@@ -255,7 +256,7 @@ add_cache(char *host, char *netid, struct netbuf *taddr, char *uaddr)
 
 #ifdef ND_DEBUG
 		fprintf(stderr, "Deleted from cache: %s : %s\n",
-			cptr->ac_host, cptr->ac_netid);
+		    cptr->ac_host, cptr->ac_netid);
 #endif
 		free(cptr->ac_host);
 		free(cptr->ac_netid);
@@ -329,7 +330,7 @@ _getclnthandle_timed(char *host, struct netconfig *nconf, char **targaddr,
 	if (ad_cache != NULL) {
 		addr = ad_cache->ac_taddr;
 		client = _clnt_tli_create_timed(RPC_ANYFD, nconf, addr,
-				RPCBPROG, RPCBVERS4, 0, 0, tp);
+		    RPCBPROG, RPCBVERS4, 0, 0, tp);
 		if (client != NULL) {
 			if (targaddr) {
 				/*
@@ -344,9 +345,9 @@ _getclnthandle_timed(char *host, struct netconfig *nconf, char **targaddr,
 						"_getclnthandle_timed: strdup "
 						"failed.");
 						rpc_createerr.cf_stat =
-							RPC_SYSTEMERROR;
+						    RPC_SYSTEMERROR;
 						(void) rw_unlock(
-							&rpcbaddr_cache_lock);
+						    &rpcbaddr_cache_lock);
 						return (NULL);
 					}
 				} else {
@@ -384,7 +385,7 @@ _getclnthandle_timed(char *host, struct netconfig *nconf, char **targaddr,
 #ifdef ND_DEBUG
 	fprintf(stderr, "rpcbind client routines: diagnostics :\n");
 	fprintf(stderr, "\tGetting address for (%s, %s, %s) ... \n",
-		rpcbind_hs.h_host, rpcbind_hs.h_serv, nconf->nc_netid);
+	    rpcbind_hs.h_host, rpcbind_hs.h_serv, nconf->nc_netid);
 #endif
 
 	if ((neterr = netdir_getbyname(nconf, &rpcbind_hs, &nas)) != 0) {
@@ -408,7 +409,7 @@ _getclnthandle_timed(char *host, struct netconfig *nconf, char **targaddr,
 	free(ua);
 
 	fprintf(stderr, "\tnetbuf len = %d, maxlen = %d\n",
-		addr->len, addr->maxlen);
+	    addr->len, addr->maxlen);
 	fprintf(stderr, "\tAddress is ");
 	for (i = 0; i < addr->len; i++)
 		fprintf(stderr, "%u.", addr->buf[i]);
@@ -445,29 +446,14 @@ static CLIENT *
 local_rpcb(void)
 {
 	static struct netconfig *loopnconf;
-	static char *hostname;
 	extern mutex_t loopnconf_lock;
 
 /* VARIABLES PROTECTED BY loopnconf_lock: loopnconf */
 	(void) mutex_lock(&loopnconf_lock);
 	if (loopnconf == NULL) {
-		struct utsname utsname;
 		struct netconfig *nconf, *tmpnconf = NULL;
 		void *nc_handle;
 
-		if (hostname == NULL) {
-#if defined(__i386) && !defined(__amd64)
-			if ((_nuname(&utsname) == -1) ||
-#else
-			if ((uname(&utsname) == -1) ||
-#endif
-			    ((hostname = strdup(utsname.nodename)) == NULL)) {
-				syslog(LOG_ERR, "local_rpcb : strdup failed.");
-				rpc_createerr.cf_stat = RPC_UNKNOWNHOST;
-				(void) mutex_unlock(&loopnconf_lock);
-				return (NULL);
-			}
-		}
 		nc_handle = setnetconfig();
 		if (nc_handle == NULL) {
 			/* fails to open netconfig file */
@@ -492,7 +478,7 @@ local_rpcb(void)
 		(void) endnetconfig(nc_handle);
 	}
 	(void) mutex_unlock(&loopnconf_lock);
-	return (getclnthandle(hostname, loopnconf, NULL));
+	return (getclnthandle(HOST_SELF_CONNECT, loopnconf, NULL));
 }
 
 /*
@@ -522,7 +508,7 @@ rpcb_set(const rpcprog_t program, const rpcvers_t version,
 		return (FALSE);
 
 	parms.r_addr = taddr2uaddr((struct netconfig *)nconf,
-			(struct netbuf *)address); /* convert to universal */
+	    (struct netbuf *)address); /* convert to universal */
 	if (!parms.r_addr) {
 		rpc_createerr.cf_stat = RPC_N2AXLATEFAILURE;
 		return (FALSE); /* no universal address */
@@ -539,7 +525,7 @@ rpcb_set(const rpcprog_t program, const rpcvers_t version,
 	parms.r_owner = uidbuf;
 
 	CLNT_CALL(client, RPCBPROC_SET, (xdrproc_t)xdr_rpcb, (char *)&parms,
-			(xdrproc_t)xdr_bool, (char *)&rslt, tottimeout);
+	    (xdrproc_t)xdr_bool, (char *)&rslt, tottimeout);
 
 	CLNT_DESTROY(client);
 	free(parms.r_addr);
@@ -576,7 +562,7 @@ rpcb_unset(const rpcprog_t program, const rpcvers_t version,
 	parms.r_owner = uidbuf;
 
 	CLNT_CALL(client, RPCBPROC_UNSET, (xdrproc_t)xdr_rpcb, (char *)&parms,
-			(xdrproc_t)xdr_bool, (char *)&rslt, tottimeout);
+	    (xdrproc_t)xdr_bool, (char *)&rslt, tottimeout);
 
 	CLNT_DESTROY(client);
 	return (rslt);
@@ -601,7 +587,7 @@ got_entry(rpcb_entry_list_ptr relp, struct netconfig *nconf)
 			na = uaddr2taddr(nconf, rmap->r_maddr);
 #ifdef ND_DEBUG
 			fprintf(stderr, "\tRemote address is [%s].\n",
-				rmap->r_maddr);
+			    rmap->r_maddr);
 			if (!na)
 				fprintf(stderr,
 				    "\tCouldn't resolve remote address!\n");
@@ -619,20 +605,11 @@ got_entry(rpcb_entry_list_ptr relp, struct netconfig *nconf)
 bool_t
 __rpcbind_is_up(void)
 {
-	struct utsname name;
-	char uaddr[SYS_NMLN];
 	struct netbuf *addr;
 	int fd;
 	struct t_call *sndcall;
 	struct netconfig *netconf;
 	bool_t res;
-
-#if defined(__i386) && !defined(__amd64)
-	if (_nuname(&name) == -1)
-#else
-	if (uname(&name) == -1)
-#endif
-		return (TRUE);
 
 	if ((fd = t_open("/dev/ticotsord", O_RDWR, NULL)) == -1)
 		return (TRUE);
@@ -648,15 +625,12 @@ __rpcbind_is_up(void)
 		return (TRUE);
 	}
 
-	uaddr[0] = '\0';
-	(void) strcpy(uaddr, name.nodename);
-	(void) strcat(uaddr, ".rpc");
 	if ((netconf = getnetconfigent("ticotsord")) == NULL) {
 		(void) t_free((char *)sndcall, T_CALL);
 		(void) t_close(fd);
 		return (FALSE);
 	}
-	addr = uaddr2taddr(netconf, uaddr);
+	addr = uaddr2taddr(netconf, "localhost.rpc");
 	freenetconfigent(netconf);
 	if (addr == NULL || addr->buf == NULL) {
 		if (addr)
@@ -763,7 +737,7 @@ __rpcb_findaddr_timed(rpcprog_t program, rpcvers_t version,
 			 */
 			for (;;) {
 				if ((newnconf = __rpc_getconf(handle))
-								    == NULL) {
+				    == NULL) {
 					__rpc_endconf(handle);
 					rpc_createerr.cf_stat =
 					    RPC_UNKNOWNPROTO;
@@ -779,11 +753,11 @@ __rpcb_findaddr_timed(rpcprog_t program, rpcvers_t version,
 			}
 
 			client = _getclnthandle_timed(host, newnconf,
-					&parms.r_addr, tp);
+			    &parms.r_addr, tp);
 			__rpc_endconf(handle);
 		} else {
 			client = _getclnthandle_timed(host, nconf,
-					&parms.r_addr, tp);
+			    &parms.r_addr, tp);
 		}
 		if (client == NULL)
 			return (NULL);
@@ -797,12 +771,12 @@ __rpcb_findaddr_timed(rpcprog_t program, rpcvers_t version,
 		pmapparms.pm_prog = program;
 		pmapparms.pm_vers = version;
 		pmapparms.pm_prot = strcmp(nconf->nc_proto, NC_TCP) ?
-				    IPPROTO_UDP : IPPROTO_TCP;
+		    IPPROTO_UDP : IPPROTO_TCP;
 		pmapparms.pm_port = 0;	/* not needed */
 		clnt_st = CLNT_CALL(client, PMAPPROC_GETPORT,
-				    (xdrproc_t)xdr_pmap, (caddr_t)&pmapparms,
-				    (xdrproc_t)xdr_u_short, (caddr_t)&port,
-				    *tp);
+		    (xdrproc_t)xdr_pmap, (caddr_t)&pmapparms,
+		    (xdrproc_t)xdr_u_short, (caddr_t)&port,
+		    *tp);
 		if (clnt_st != RPC_SUCCESS) {
 			if ((clnt_st == RPC_PROGVERSMISMATCH) ||
 			    (clnt_st == RPC_PROGUNAVAIL))
@@ -829,7 +803,7 @@ __rpcb_findaddr_timed(rpcprog_t program, rpcvers_t version,
 		}
 		(void) memcpy(address->buf, remote.buf, remote.len);
 		(void) memcpy(&address->buf[sizeof (short)], &port,
-								sizeof (short));
+		    sizeof (short));
 		address->len = address->maxlen = remote.len;
 		goto done;
 	}
@@ -882,8 +856,8 @@ try_rpcbind:
 						continue;
 					}
 					client = _getclnthandle_timed(host,
-						nconf_clts, &parms.r_addr,
-						tp);
+					    nconf_clts, &parms.r_addr,
+					    tp);
 					break;
 				}
 				__rpc_endconf(handle);
@@ -903,7 +877,7 @@ try_rpcbind:
 			parms.r_addr = strdup(""); /* for XDRing */
 			if (parms.r_addr == NULL) {
 				syslog(LOG_ERR, "__rpcb_findaddr_timed: "
-					"strdup failed.");
+				    "strdup failed.");
 				rpc_createerr.cf_stat = RPC_SYSTEMERROR;
 				address = NULL;
 				goto error;
@@ -913,18 +887,18 @@ try_rpcbind:
 		CLNT_CONTROL(client, CLSET_RETRY_TIMEOUT, (char *)&rpcbrmttime);
 
 		clnt_st = CLNT_CALL(client, RPCBPROC_GETADDRLIST,
-				    (xdrproc_t)xdr_rpcb, (char *)&parms,
-				    (xdrproc_t)xdr_rpcb_entry_list_ptr,
-				    (char *)&relp, *tp);
+		    (xdrproc_t)xdr_rpcb, (char *)&parms,
+		    (xdrproc_t)xdr_rpcb_entry_list_ptr,
+		    (char *)&relp, *tp);
 		if (clnt_st == RPC_SUCCESS) {
 			if (address = got_entry(relp, nconf)) {
 				xdr_free((xdrproc_t)xdr_rpcb_entry_list_ptr,
-					(char *)&relp);
+				    (char *)&relp);
 				goto done;
 			}
 			/* Entry not found for this transport */
 			xdr_free((xdrproc_t)xdr_rpcb_entry_list_ptr,
-				    (char *)&relp);
+			    (char *)&relp);
 			/*
 			 * XXX: should have perhaps returned with error but
 			 * since the remote machine might not always be able
@@ -933,7 +907,7 @@ try_rpcbind:
 			 */
 			goto regular_rpcbind;
 		} else if ((clnt_st == RPC_PROGVERSMISMATCH) ||
-			    (clnt_st == RPC_PROGUNAVAIL)) {
+		    (clnt_st == RPC_PROGUNAVAIL)) {
 			start_vers = RPCBVERS;	/* Try version 3 now */
 			goto regular_rpcbind; /* Try different versions */
 		} else {
@@ -966,7 +940,7 @@ regular_rpcbind:
 		parms.r_addr = strdup("");	/* for XDRing */
 		if (parms.r_addr == NULL) {
 			syslog(LOG_ERR, "__rpcb_findaddr_timed: "
-				"strdup failed.");
+			    "strdup failed.");
 			address = NULL;
 			rpc_createerr.cf_stat = RPC_SYSTEMERROR;
 			goto error;
@@ -980,9 +954,9 @@ regular_rpcbind:
 		/* Set the version */
 		CLNT_CONTROL(client, CLSET_VERS, (char *)&vers);
 		clnt_st = CLNT_CALL(client, RPCBPROC_GETADDR,
-				    (xdrproc_t)xdr_rpcb, (char *)&parms,
-				    (xdrproc_t)xdr_wrapstring,
-				    (char *)&ua, *tp);
+		    (xdrproc_t)xdr_rpcb, (char *)&parms,
+		    (xdrproc_t)xdr_wrapstring,
+		    (char *)&ua, *tp);
 		if (clnt_st == RPC_SUCCESS) {
 			if ((ua == NULL) || (ua[0] == NULL)) {
 				if (ua != NULL)
@@ -997,7 +971,7 @@ regular_rpcbind:
 			fprintf(stderr, "\tRemote address is [%s]\n", ua);
 			if (!address)
 				fprintf(stderr,
-					"\tCouldn't resolve remote address!\n");
+				    "\tCouldn't resolve remote address!\n");
 #endif
 			xdr_free((xdrproc_t)xdr_wrapstring, (char *)&ua);
 
@@ -1095,19 +1069,19 @@ rpcb_getmaps(const struct netconfig *nconf, const char *host)
 	int vers = 0;
 
 	client = getclnthandle((char *)host,
-			(struct netconfig *)nconf, NULL);
+	    (struct netconfig *)nconf, NULL);
 	if (client == NULL)
 		return (NULL);
 
 	clnt_st = CLNT_CALL(client, RPCBPROC_DUMP,
-			(xdrproc_t)xdr_void, NULL,
-			(xdrproc_t)xdr_rpcblist_ptr,
-			(char *)&head, tottimeout);
+	    (xdrproc_t)xdr_void, NULL,
+	    (xdrproc_t)xdr_rpcblist_ptr,
+	    (char *)&head, tottimeout);
 	if (clnt_st == RPC_SUCCESS)
 		goto done;
 
 	if ((clnt_st != RPC_PROGVERSMISMATCH) &&
-		    (clnt_st != RPC_PROGUNAVAIL)) {
+	    (clnt_st != RPC_PROGUNAVAIL)) {
 		rpc_createerr.cf_stat = RPC_RPCBFAILURE;
 		clnt_geterr(client, &rpc_createerr.cf_error);
 		goto done;
@@ -1119,9 +1093,9 @@ rpcb_getmaps(const struct netconfig *nconf, const char *host)
 		vers = RPCBVERS;
 		CLNT_CONTROL(client, CLSET_VERS, (char *)&vers);
 		if (CLNT_CALL(client, RPCBPROC_DUMP,
-			(xdrproc_t)xdr_void,
-			NULL, (xdrproc_t)xdr_rpcblist_ptr,
-			(char *)&head, tottimeout) == RPC_SUCCESS)
+		    (xdrproc_t)xdr_void,
+		    NULL, (xdrproc_t)xdr_rpcblist_ptr,
+		    (char *)&head, tottimeout) == RPC_SUCCESS)
 				goto done;
 	}
 	rpc_createerr.cf_stat = RPC_RPCBFAILURE;
@@ -1167,8 +1141,8 @@ rpcb_rmtcall(const struct netconfig *nconf, const char *host,
 	for (rpcb_vers = RPCBVERS4; rpcb_vers >= RPCBVERS; rpcb_vers--) {
 		CLNT_CONTROL(client, CLSET_VERS, (char *)&rpcb_vers);
 		stat = CLNT_CALL(client, RPCBPROC_CALLIT,
-			(xdrproc_t)xdr_rpcb_rmtcallargs, (char *)&a,
-			(xdrproc_t)xdr_rpcb_rmtcallres, (char *)&r, tout);
+		    (xdrproc_t)xdr_rpcb_rmtcallargs, (char *)&a,
+		    (xdrproc_t)xdr_rpcb_rmtcallres, (char *)&r, tout);
 		if ((stat == RPC_SUCCESS) && (addr_ptr != NULL)) {
 			struct netbuf *na;
 
@@ -1191,7 +1165,7 @@ rpcb_rmtcall(const struct netconfig *nconf, const char *host,
 			break;
 		}
 		if ((stat != RPC_PROGVERSMISMATCH) &&
-			    (stat != RPC_PROGUNAVAIL))
+		    (stat != RPC_PROGUNAVAIL))
 			goto error;
 	}
 error:
@@ -1239,8 +1213,8 @@ rpcb_gettime(const char *host, time_t *timep)
 		return (FALSE);
 
 	st = CLNT_CALL(client, RPCBPROC_GETTIME,
-		(xdrproc_t)xdr_void, NULL,
-		(xdrproc_t)xdr_time_t, (char *)timep, tottimeout);
+	    (xdrproc_t)xdr_void, NULL,
+	    (xdrproc_t)xdr_time_t, (char *)timep, tottimeout);
 
 	if ((st == RPC_PROGVERSMISMATCH) || (st == RPC_PROGUNAVAIL)) {
 		CLNT_CONTROL(client, CLGET_VERS, (char *)&vers);
@@ -1249,9 +1223,9 @@ rpcb_gettime(const char *host, time_t *timep)
 			vers = RPCBVERS;
 			CLNT_CONTROL(client, CLSET_VERS, (char *)&vers);
 			st = CLNT_CALL(client, RPCBPROC_GETTIME,
-				(xdrproc_t)xdr_void, NULL,
-				(xdrproc_t)xdr_time_t, (char *)timep,
-				tottimeout);
+			    (xdrproc_t)xdr_void, NULL,
+			    (xdrproc_t)xdr_time_t, (char *)timep,
+			    tottimeout);
 		}
 	}
 	CLNT_DESTROY(client);
@@ -1282,8 +1256,8 @@ rpcb_taddr2uaddr(struct netconfig *nconf, struct netbuf *taddr)
 		return (NULL);
 
 	CLNT_CALL(client, RPCBPROC_TADDR2UADDR, (xdrproc_t)xdr_netbuf,
-		(char *)taddr, (xdrproc_t)xdr_wrapstring, (char *)&uaddr,
-		tottimeout);
+	    (char *)taddr, (xdrproc_t)xdr_wrapstring, (char *)&uaddr,
+	    tottimeout);
 	CLNT_DESTROY(client);
 	return (uaddr);
 }
@@ -1318,8 +1292,8 @@ rpcb_uaddr2taddr(struct netconfig *nconf, char *uaddr)
 	}
 
 	if (CLNT_CALL(client, RPCBPROC_UADDR2TADDR, (xdrproc_t)xdr_wrapstring,
-		(char *)&uaddr, (xdrproc_t)xdr_netbuf, (char *)taddr,
-		tottimeout) != RPC_SUCCESS) {
+	    (char *)&uaddr, (xdrproc_t)xdr_netbuf, (char *)taddr,
+	    tottimeout) != RPC_SUCCESS) {
 		free(taddr);
 		taddr = NULL;
 	}
