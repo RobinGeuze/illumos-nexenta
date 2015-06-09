@@ -212,6 +212,7 @@ typedef enum {
 	ZPOOL_PROP_DEDUP_LO_BEST_EFFORT,
 	ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
 	ZPOOL_PROP_FORCETRIM,
+	ZPOOL_PROP_AUTOTRIM,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 
@@ -667,6 +668,8 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_REMOVED		"removed"
 #define	ZPOOL_CONFIG_FRU		"fru"
 #define	ZPOOL_CONFIG_AUX_STATE		"aux_state"
+#define	ZPOOL_CONFIG_TRIM_PROG		"trim_prog"
+#define	ZPOOL_CONFIG_TRIM_RATE		"trim_rate"
 
 /* Rewind policy parameters */
 #define	ZPOOL_REWIND_POLICY		"rewind-policy"
@@ -779,6 +782,14 @@ typedef enum pool_scan_func {
 	POOL_SCAN_META,
 	POOL_SCAN_FUNCS
 } pool_scan_func_t;
+
+/*
+ * TRIM command configuration info.
+ */
+typedef struct trim_cmd_info_s {
+	uint64_t	tci_start;	/* B_TRUE = start; B_FALSE = stop */
+	uint64_t	tci_rate;	/* requested TRIM rate in bytes/sec */
+} trim_cmd_info_t;
 
 /*
  * ZIO types.  Needed to interpret vdev statistics below.
@@ -984,6 +995,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_DATASET_LIST_NEXT_NVL,
 	ZFS_IOC_SNAPSHOT_LIST_NEXT_NVL,
 	ZFS_IOC_POOL_GET_PROPS_NVL,
+	ZFS_IOC_POOL_TRIM,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 
