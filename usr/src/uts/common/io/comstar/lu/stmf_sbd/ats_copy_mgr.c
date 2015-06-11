@@ -43,8 +43,8 @@
 
 /* ATS routines. */
 #define	SBD_ATS_MAX_NBLKS	32
-int HardwareAcceleratedLocking = 1;
-int HardwareAcceleratedMove = 1;
+int HardwareAcceleratedLocking = 0;
+int HardwareAcceleratedMove = 0;
 uint64_t sbd_list_length = 0;
 
 uint8_t
