@@ -3608,7 +3608,7 @@ arc_adjust(void)
 	 */
 	target -= bytes;
 	total_evicted +=
-	    arc_adjust_impl(arc_mru, 0, target, ARC_BUFC_DDT);
+	    arc_adjust_impl(arc_mfu, 0, target, ARC_BUFC_DDT);
 
 	/*
 	 * Adjust ghost lists
