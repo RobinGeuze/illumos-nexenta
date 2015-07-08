@@ -32,6 +32,7 @@
 #include <sys/ksocket.h>
 #include <sys/debug.h>
 #include <sys/kmem.h>
+#include <limits.h>
 #include <unistd.h>
 #include <errno.h>
 #include <umem.h>
@@ -305,6 +306,8 @@ ksocket_sendmsg(ksocket_t ks, struct nmsghdr *msg, int flags,
 		return (ENOTSOCK);
 	}
 
+	/* socksyscalls.c uses MSG_MAXIOVLEN (local macro), both are 16 */
+	ASSERT3U(msg->msg_iovlen, <=, IOV_MAX);
 	len = sendmsg(KSTOSO(ks), msg, flags);
 	if (len < 0) {
 		if (sent != NULL)
