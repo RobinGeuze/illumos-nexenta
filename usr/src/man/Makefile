@@ -22,6 +22,7 @@ SUBDIRS=	man1		\
 		man1c		\
 		man1has		\
 		man1m		\
+		man1s		\
 		man2		\
 		man3		\
 		man3bsm		\
