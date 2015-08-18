@@ -3540,9 +3540,7 @@ top:
 		    RW_READER)) {
 			if (spa->spa_trim_stop)
 				goto out;
-#ifdef	_KERNEL
 			delay(USEC_TO_TICK(10000));
-#endif
 		}
 		mutex_enter(&mg->mg_lock);
 		if (mg->mg_metaslab_tree_dirty) {
