@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -37,6 +38,7 @@ verify_runnable "global"
 ismounted $TESTFS && \
         log_must $ZFS umount $TESTDIR
 destroy_pool "$TESTPOOL"
+[[ -e $TESTDIR ]] && log_must $RM -rf $TESTDIR
 
 #
 # Here we create & destroy a zpool using the disks

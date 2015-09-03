@@ -22,7 +22,7 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-# Copyright 2015, Nexenta Systems Inc. All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -433,6 +433,8 @@ function default_cleanup_noexit
 
 	[[ -d $TESTDIR ]] && \
 		log_must $RM -rf $TESTDIR
+	[[ -d $TESTDIR1 ]] && \
+		log_must $RM -rf $TESTDIR1 
 }
 
 
