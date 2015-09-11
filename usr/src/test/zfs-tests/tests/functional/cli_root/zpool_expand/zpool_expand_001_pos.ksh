@@ -29,6 +29,10 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 #
 
+#
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+
 . $STF_SUITE/include/libtest.shlib
 . $STF_SUITE/tests/functional/cli_root/zpool_expand/zpool_expand.cfg
 
@@ -51,7 +55,7 @@ verify_runnable "global"
 function cleanup
 {
 	if poolexists $TESTPOOL1; then
-		log_must $ZPOOL destroy $TESTPOOL1
+		log_must destroy_pool_no_force $TESTPOOL1
 	fi
 
 	for i in 1 2 3; do
@@ -89,7 +93,7 @@ for type in " " mirror raidz raidz2; do
 	done
 
 	$SYNC
-	$SLEEP 10
+	$SLEEP 30
 	$SYNC
 
 	typeset expand_size=$(get_pool_prop size $TESTPOOL1)
