@@ -113,6 +113,13 @@ static int max_cached_ncmds = FCT_MAX_CACHED_CMDS;
 static fct_i_local_port_t *fct_iport_list = NULL;
 static kmutex_t fct_global_mutex;
 uint32_t fct_rscn_options = RSCN_OPTION_VERIFY;
+/*
+ * This is to keep fibre channel from hanging if syseventd is
+ * not working correctly and the queue fills. It is a tunable
+ * to allow the user to force event logging to always happen
+ * which is the default.
+ */
+static uint8_t fct_force_log = 1;  /* use DDI_SLEEP on ddi_log_sysevent */
 
 /*
  * For use during core examination. These counts are normally really low
@@ -3014,7 +3021,7 @@ fct_handle_rcvd_abts(fct_cmd_t *cmd)
 		atomic_and_32(&ic->icmd_flags, ~ICMD_IN_IRP_QUEUE);
 		list_remove(&irp->irp_els_list, ic);
 	}
-	
+
 	/* Check if this an abts retry */
 	if (c->cmd_link && (ic->icmd_flags & ICMD_ABTS_RECEIVED)) {
 		/* Kill this abts. */
@@ -3449,6 +3456,7 @@ fct_log_local_port_event(fct_local_port_t *port, char *subclass)
 {
 	nvlist_t *attr_list;
 	int port_instance;
+	int rc, sleep = DDI_SLEEP;
 
 	if (!fct_dip)
 		return;
@@ -3469,8 +3477,15 @@ fct_log_local_port_event(fct_local_port_t *port, char *subclass)
 		goto error;
 	}
 
-	(void) ddi_log_sysevent(fct_dip, DDI_VENDOR_SUNW, EC_SUNFC,
-	    subclass, attr_list, NULL, DDI_SLEEP);
+	if (fct_force_log == 0) {
+		sleep = DDI_NOSLEEP;
+	}
+	rc = ddi_log_sysevent(fct_dip, DDI_VENDOR_SUNW, EC_SUNFC,
+	    subclass, attr_list, NULL, sleep);
+	if (rc != DDI_SUCCESS) {
+		cmn_err(CE_WARN, "%s: queue full event lost", __func__);
+		goto error;
+	}
 
 	nvlist_free(attr_list);
 	return;
@@ -3488,6 +3503,7 @@ fct_log_remote_port_event(fct_local_port_t *port, char *subclass,
 {
 	nvlist_t *attr_list;
 	int port_instance;
+	int rc, sleep = DDI_SLEEP;
 
 	if (!fct_dip)
 		return;
@@ -3518,8 +3534,15 @@ fct_log_remote_port_event(fct_local_port_t *port, char *subclass,
 		goto error;
 	}
 
-	(void) ddi_log_sysevent(fct_dip, DDI_VENDOR_SUNW, EC_SUNFC,
-	    subclass, attr_list, NULL, DDI_SLEEP);
+	if (fct_force_log == 0) {
+		sleep = DDI_NOSLEEP;
+	}
+	rc = ddi_log_sysevent(fct_dip, DDI_VENDOR_SUNW, EC_SUNFC,
+	    subclass, attr_list, NULL, sleep);
+	if (rc != DDI_SUCCESS) {
+		cmn_err(CE_WARN, "%s:event dropped", __func__);
+		goto error;
+	}
 
 	nvlist_free(attr_list);
 	return;
