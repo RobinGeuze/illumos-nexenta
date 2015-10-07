@@ -45,7 +45,8 @@ driver name=bnxe perms="* 0666 root sys" \
     alias=pci14e4,1650 \
     alias=pciex14e4,164e \
     alias=pciex14e4,164f \
-    alias=pciex14e4,1650
+    alias=pciex14e4,1650 \
+    alias=pciex14e4,16a1
 file path=kernel/drv/$(ARCH64)/bnxe group=sys
 file path=kernel/drv/bnxe group=sys
 file path=kernel/drv/bnxe.conf group=sys \
