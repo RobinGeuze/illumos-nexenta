@@ -25,6 +25,13 @@
 /* SMB2 AAPL extensions: enabled? */
 int smb2_aapl_extensions = 1;
 
+/*
+ * Normally suppress file IDs for MacOS because it
+ * requires them to be unique per share, and ours
+ * can have duplicates under .zfs or sub-mounts.
+ */
+int smb2_aapl_use_file_ids = 0;
+
 static uint32_t smb2_aapl_srv_query(smb_request_t *,
 	mbuf_chain_t *, mbuf_chain_t *);
 
