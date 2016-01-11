@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -277,10 +277,11 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 		 */
 		if (freedir != NULL) {
 			spa_prop_add_list(*nvp, ZPOOL_PROP_FREEING, NULL,
-			    freedir->dd_phys->dd_used_bytes, src);
+			    freedir->dd_phys->dd_used_bytes +
+			    pool->dp_long_freeing_total, src);
 		} else {
 			spa_prop_add_list(*nvp, ZPOOL_PROP_FREEING,
-			    NULL, 0, src);
+			    NULL, pool->dp_long_freeing_total, src);
 		}
 	}
 
