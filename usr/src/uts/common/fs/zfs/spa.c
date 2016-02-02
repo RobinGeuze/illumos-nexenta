@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -4165,8 +4165,6 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 		return (error);
 	}
 
-	spa_async_resume(spa);
-
 	/*
 	 * Override any spares and level 2 cache devices as specified by
 	 * the user, as these may have correct device names/devids, etc.
@@ -4219,6 +4217,14 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 		 */
 		spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 	}
+
+	/*
+	 * Start async resume as late as possible to reduce I/O activity when
+	 * importing a pool. This will let any pending txgs (e.g. from scrub
+	 * or resilver) to complete quickly thereby reducing import times in
+	 * such cases.
+	 */
+	spa_async_resume(spa);
 
 	/*
 	 * It's possible that the pool was expanded while it was exported.
